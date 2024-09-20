@@ -1,8 +1,7 @@
 import gradio as gr
 import os
 import uuid
-import dotenv
-import openai 
+
 import subprocess
 import sys
 from pydantic import BaseModel
@@ -14,6 +13,9 @@ def install(package):
 packages = ["openai", "python-dotenv"]
 for package in packages:
     install(package)
+
+import dotenv
+import openai 
 
 dotenv.load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
