@@ -138,7 +138,7 @@ def format_history(history):
                         Your browser does not support the audio element.
                     </audio>
                     <a href="file={audio_path}" download="{file_name}">音声ダウンロード</a>
-                    <p>ユーザーの感情: <strong>{emotion_jp}</strong></p>
+                    <p>ユーザーの感情: <strong style="color: #FF4500; font-size: 1.2em; background-color: #FFFACD; padding: 2px 5px; border-radius: 3px;">{emotion_jp}</strong></p>
                     """
                 else:
                     html += f"""
