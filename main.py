@@ -1,8 +1,11 @@
 import gradio as gr
 import os
 import uuid
+import dotenv
+import openai 
 import subprocess
 import sys
+from pydantic import BaseModel
 
 
 def install(package):
@@ -12,15 +15,22 @@ packages = ["openai", "python-dotenv"]
 for package in packages:
     install(package)
 
-
-import dotenv
-import openai 
-
 dotenv.load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 openai.api_key = api_key
 client = openai.OpenAI()
 
+
+EMOTION_MAP = {
+    'HAPPY': '嬉しい',
+    'SAD': '悲しい',
+    'ANGRY': '怒っている',
+    'EXCITED': '興奮している',
+    'NEUTRAL': '無感情'
+}
+
+class Emotion(BaseModel):
+    emotion: str
 
 def text_to_speech(text, output_dir):
     unique_filename = f"output_{uuid.uuid4().hex}.wav"
@@ -50,6 +60,28 @@ def speech_to_text(audio):
     result = transcript.text
     return result
 
+def emotion_detection(text):
+    completion = client.beta.chat.completions.parse(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": '''
+                Analyze the user's input and determine their emotional state. Choose the most appropriate emotion from:
+                    ['HAPPY', 'SAD', 'ANGRY', 'EXCITED', 'NEUTRAL']
+                Guidelines:
+                    HAPPY: Positive, joyful expressions
+                    SAD: Negative, downcast feelings
+                    ANGRY: Frustration, irritation
+                    EXCITED: High energy, enthusiasm
+                    NEUTRAL: No clear emotion or balanced state
+                Consider context, tone, and specific words used. If unclear, lean towards NEUTRAL.'''},
+            {"role": "user", "content": text},
+        ],
+        response_format=Emotion,
+    )
+    emotion = completion.choices[0].message.parsed
+    print(f"Detected emotion: {emotion.emotion}")
+    return emotion.emotion
+
 def chat_agent(message, message_history):
     system_prompt = """
     You are an AI agent functioning as a customer support operator for NTT docomo. You must response with the same language with the user input.
@@ -72,11 +104,13 @@ def chat_agent(message, message_history):
 
 def chat(message, audio, history):
     message_history = [{"role": msg["role"], "content": msg["content"]} for msg in history[-6:]]
+    # detect emotion
+    emotion = emotion_detection(message)
     bot_message = chat_agent(message, message_history)
     audio_dir = os.path.dirname(audio)
     bot_audio = text_to_speech(bot_message, audio_dir)
     new_history = history + [
-        {"role": "user", "content": message, "audio": audio},
+        {"role": "user", "content": message, "audio": audio, "emotion": emotion},
         {"role": "assistant", "content": bot_message, "audio": bot_audio}
     ]
     return bot_message, bot_audio, new_history
@@ -89,19 +123,31 @@ def format_history(history):
     html = "<div style='height: 400px; overflow-y: auto;'>"
     for msg in history:
         role = "ユーザー" if msg["role"] == "user" else "AIボット"
+        emotion = msg.get("emotion", None)
+        emotion_jp = EMOTION_MAP.get(emotion, "無感情")
         html += f"<p><strong>{role}:</strong> {msg['content']}</p>"
         if msg["audio"]:
             audio_path = msg["audio"]
             if os.path.exists(audio_path):
                 file_name = os.path.basename(audio_path)
                 print(audio_path, file_name)
-                html += f"""
-                <audio controls>
-                    <source src="file={audio_path}" type="audio/wav">
-                    Your browser does not support the audio element.
-                </audio>
-                <a href="file={audio_path}" download="{file_name}">音声ダウンロード</a>
-                """
+                if role == "ユーザー":
+                    html += f"""
+                    <audio controls>
+                        <source src="file={audio_path}" type="audio/wav">
+                        Your browser does not support the audio element.
+                    </audio>
+                    <a href="file={audio_path}" download="{file_name}">音声ダウンロード</a>
+                    <p>ユーザーの感情: <strong>{emotion_jp}</strong></p>
+                    """
+                else:
+                    html += f"""
+                    <audio controls>
+                        <source src="file={audio_path}" type="audio/wav">
+                        Your browser does not support the audio element.
+                    </audio>
+                    <a href="file={audio_path}" download="{file_name}">音声ダウンロード</a>
+                    """
             else:
                 html += "<p>音声ファイルが存在しません</p>"
         html += "<hr>"
